@@ -1,0 +1,42 @@
+---
+description: Quy tắc bắt buộc cho dự án Local Media Server (FastAPI + SQLite + Plyr.js)
+alwaysApply: true
+---
+
+# Local Media Server – Quy tắc bắt buộc
+
+Kiến trúc gốc: `local_media_server.md`. Mọi thay đổi phải bám theo tài liệu đó.
+
+## Skill cần đọc trước khi sửa code
+
+- Backend / API: `fastapi-pro`, `python-patterns` (async cho I/O, `def` cho code blocking như sqlite/subprocess)
+- Test: `python-testing-patterns` (pytest, fixture, TestClient)
+- Frontend: `frontend-security-coder` (chống XSS), `tailwind-patterns`
+
+## Kiến trúc
+
+- `app/main.py`: chỉ định tuyến, không chứa logic nghiệp vụ.
+- `app/streamer.py`: HTTP Range / 206. `app/subtitle.py`: SRT -> VTT. `app/scanner.py`: quét ổ cứng + FFmpeg. `app/database.py`: toàn bộ SQL.
+- Cấu hình đọc từ `app/config.py` (biến môi trường `MEDIA_DIRS`, `MEDIA_DB`, `AUTO_SCAN`, `CORS_ORIGINS`). Không hard-code đường dẫn ổ đĩa.
+
+## Streaming (quan trọng nhất)
+
+- Không bao giờ đọc cả file video vào RAM. Luôn `seek` + đọc từng chunk (1 MB) bằng `aiofiles`.
+- Có Range hợp lệ -> `206` + `Content-Range` + `Accept-Ranges: bytes`. Range vượt file -> `416` + `Content-Range: bytes */size`.
+- Endpoint stream phải hỗ trợ cả `GET` và `HEAD`.
+
+## Bảo mật (server mở cho cả mạng LAN, không có đăng nhập)
+
+- Client chỉ gửi `movie_id`. Không bao giờ nhận đường dẫn file từ client. Đường dẫn lấy từ DB và phải nằm trong `MEDIA_DIRS` trước khi mở.
+- SQL luôn dùng tham số `?`. Escape `%` và `_` khi dùng `LIKE`.
+- `subprocess` luôn truyền list đối số, không dùng `shell=True`, luôn có `timeout`.
+- Frontend dùng `textContent` / `createElement`, cấm `innerHTML` với dữ liệu từ server.
+- Không phơi bày server ra Internet. Chỉ mở cổng 8000 cho mạng riêng.
+
+## Quy ước code
+
+- Python 3.10+, type hints cho tham số và giá trị trả về của hàm public.
+- Hàm blocking (sqlite, ffmpeg) không được gọi trực tiếp trong `async def`; dùng `def` route hoặc threadpool.
+- Mỗi tính năng mới cần test trong `tests/`. Chạy `.venv\Scripts\python -m pytest` trước khi hoàn tất.
+- Comment và tài liệu viết bằng tiếng Việt, tên biến/hàm bằng tiếng Anh.
+- Ghim phiên bản dependency trong `requirements.txt`.
